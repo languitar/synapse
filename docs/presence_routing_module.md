@@ -25,8 +25,9 @@ Note that one method of `ModuleApi` that may be useful is:
 ModuleApi.send_local_online_presence_to(users: List[str]) -> None
 ```
 
-which can be given a list of local or remote MXIDs to broadcast all local user
-presence to. Does not include users who are currently in the offline state.
+which can be given a list of local or remote MXIDs to broadcast local user
+presence to (for those users that the receiving user is considered interested in). 
+It does not include state for users who are currently offline.
 
 ### Example
 
