@@ -215,21 +215,17 @@ def add_sharding_to_shared_config(
         shared_config.setdefault("federation_sender_instances", []).append(worker_name)
 
     elif worker_type == "event_persister":
+        # Event persisters write to the events stream, so we need to update
+        # the list of event stream writers
         shared_config.setdefault("stream_writers", {}).setdefault("events", []).append(
             worker_name
         )
 
-        # Event persisters write to the events stream, so we need to update the list of event
-        # stream writers in the instance_map config field
-        instance_map_events = instance_map.setdefault("events", [])
-        instance_map_events.append(
-            {
-                worker_name: {
-                    "host": "localhost",
-                    "port": worker_port,
-                }
-            }
-        )
+        # Map of stream writer instance names to host/ports combos
+        instance_map[worker_name] = {
+            "host": "localhost",
+            "port": worker_port,
+        }
 
     else:
         error("Sharding is not supported for worker type '%s'" % (worker_type,))
