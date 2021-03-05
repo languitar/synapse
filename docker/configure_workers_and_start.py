@@ -232,7 +232,7 @@ def add_sharding_to_shared_config(
         )
 
     else:
-        error("Sharding is not supported for worker type '%s'")
+        error("Sharding is not supported for worker type '%s'" % (worker_type,))
         return
 
 
