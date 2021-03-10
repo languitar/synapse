@@ -51,6 +51,7 @@ from synapse.crypto import context_factory
 from synapse.crypto.context_factory import RegularPolicyForHTTPS
 from synapse.crypto.keyring import Keyring
 from synapse.events.builder import EventBuilderFactory
+from synapse.events.presence_router import PresenceRouter
 from synapse.events.spamcheck import SpamChecker
 from synapse.events.third_party_rules import ThirdPartyEventRules
 from synapse.events.utils import EventClientSerializer
@@ -417,6 +418,10 @@ class HomeServer(metaclass=abc.ABCMeta):
     @cache_in_self
     def get_presence_handler(self) -> PresenceHandler:
         return PresenceHandler(self)
+
+    @cache_in_self
+    def get_presence_router(self) -> PresenceRouter:
+        return PresenceRouter(self)
 
     @cache_in_self
     def get_typing_handler(self):
