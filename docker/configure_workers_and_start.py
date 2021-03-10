@@ -406,7 +406,7 @@ stderr_logfile_maxbytes=0""".format_map(
         convert(
             "/conf/log.config",
             log_config_filepath,
-            worker_name="worker:" + worker_name,
+            worker_name=worker_name,
         )
 
         # Then a worker config file
