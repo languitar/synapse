@@ -245,13 +245,14 @@ class ServerConfig(Config):
             self.use_presence = config.get("use_presence", True)
 
         # Custom presence router module
-        self.presence_router_module = None
+        self.presence_router_module_class = None
         self.presence_router_config = None
         presence_router_config = presence_config.get("presence_router")
         if presence_router_config:
-            self.presence_router_module, self.presence_router_config = load_module(
-                presence_router_config, ("presence", "presence_router")
-            )
+            (
+                self.presence_router_module_class,
+                self.presence_router_config,
+            ) = load_module(presence_router_config, ("presence", "presence_router"))
 
         # Whether to update the user directory or not. This should be set to
         # false only if we are updating the user directory in a worker
