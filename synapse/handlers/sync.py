@@ -244,7 +244,7 @@ class SyncHandler:
         self.event_sources = hs.get_event_sources()
         self.clock = hs.get_clock()
         self.response_cache = ResponseCache(
-            hs, "sync"
+            hs.get_clock(), "sync"
         )  # type: ResponseCache[Tuple[Any, ...]]
         self.state = hs.get_state_handler()
         self.auth = hs.get_auth()
@@ -277,9 +277,8 @@ class SyncHandler:
         user_id = sync_config.user.to_string()
         await self.auth.check_auth_blocking(requester=requester)
 
-        res = await self.response_cache.wrap_conditional(
+        res = await self.response_cache.wrap(
             sync_config.request_key,
-            lambda result: since_token != result.next_batch,
             self._wait_for_sync_for_user,
             sync_config,
             since_token,
