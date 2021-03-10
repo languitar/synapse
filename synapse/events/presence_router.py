@@ -42,6 +42,17 @@ class PresenceRouter:
         self,
         state_updates: Iterable[UserPresenceState],
     ) -> Tuple[Dict[str, List[UserPresenceState]], Dict[str, List[UserPresenceState]]]:
+        """
+        Given an iterable of user presence updates, determine where each one
+        needs to go.
+
+        Args:
+            state_updates: An iterable of user presence state updates.
+
+        Returns:
+          A 2-tuple of (room_ids_to_states, users_to_states),
+          with each item being a dict of entity_name -> [UserPresenceState].
+        """
         if self.custom_presence_router is not None:
             # Ask the custom module
             return self.custom_presence_router.get_rooms_and_users_for_states(
