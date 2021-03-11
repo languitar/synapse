@@ -165,12 +165,14 @@ class _EventPeristenceQueue:
         self._currently_persisting_rooms.add(room_id)
 
         async def handle_queue_loop():
+            logger.debug("Starting persist loop for %s", room_id)
             try:
                 queue = self._get_drainining_queue(room_id)
                 for item in queue:
                     try:
                         ret = await per_item_callback(item)
                     except Exception:
+                        logger.exception("Exception during event persistence")
                         with PreserveLoggingContext():
                             item.deferred.errback()
                     else:
@@ -181,6 +183,7 @@ class _EventPeristenceQueue:
                 if queue:
                     self._event_persist_queues[room_id] = queue
                 self._currently_persisting_rooms.discard(room_id)
+                logger.debug("Ending persist loop for %s", room_id)
 
         # set handle_queue_loop off in the background
         run_as_background_process("persist_events", handle_queue_loop)
