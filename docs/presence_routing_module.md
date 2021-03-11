@@ -1,11 +1,8 @@
 # Presence Routing Module
 
-Synapse supports configuring a module that can specify additional destinations (users or
-rooms) to receive certain presence updates from local users.
-
-Both local or remote users can be specified as a destination. If a room is specified, that
-will be translated to all users in that room. The homeserver must be participating in any
-specified room.
+Synapse supports configuring a module that can specify additional users
+(local or remote) to should receive certain presence updates from local
+users.
 
 The presence routing module is implemented as a Python class, which will be imported by
 the running Synapse.
@@ -34,7 +31,7 @@ It does not include state for users who are currently offline.
 Below is an example implementation of a presence router class.
 
 ```python
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, Set, Tuple
 
 from synapse.handlers.presence import UserPresenceState
 from synapse.module_api import ModuleApi
@@ -45,10 +42,9 @@ class PresenceRouterConfig:
 
         # A list of users to always send all user presence updates to
         self.always_send_to_users = []  # type: List[str]
-
-        # A dictionary of user IDs and the IDs of rooms that their updates
-        # should be sent to the members of
-        self.users_to_rooms = {}  # type: Dict[str, str]
+        
+        # A list of users to ignore presence updates for
+        self.blacklisted_users = []  # type: List[str]
 
 class ExamplePresenceRouter:
     """An example implementation of synapse.presence_router.PresenceRouter.
@@ -78,20 +74,20 @@ class ExamplePresenceRouter:
         config = PresenceRouterConfig()
 
         always_send_to_users = config_dict.get("always_send_to_users")
-        users_to_rooms = config_dict.get("users_to_rooms")
+        blacklisted_users = config_dict.get("blacklisted_users")
 
         # Do some validation of config options... otherwise raise a
         # synapse.config.ConfigError.
 
         config.always_send_to_users = always_send_to_users
-        config.users_to_rooms = users_to_rooms
+        config.blacklisted_users = blacklisted_users
 
         return config
 
-    async def get_rooms_and_users_for_states(
+    async def get_users_for_states(
         self,
         state_updates: Iterable[UserPresenceState],
-    ) -> Tuple[Dict[str, List[UserPresenceState]], Dict[str, List[UserPresenceState]]]:
+    ) -> Dict[str, Set[UserPresenceState]]:
         """Given an iterable of user presence updates, determine where each one
         needs to go.
 
@@ -99,24 +95,22 @@ class ExamplePresenceRouter:
             state_updates: An iterable of user presence state updates.
 
         Returns:
-          A 2-tuple of (room_ids_to_states, users_to_states),
-          with each item being a dict of entity_name -> [UserPresenceState].
+          A dictionary of user_id -> set of UserPresenceState that the user should 
+          receive.
         """
-        destination_rooms = {}  # type: Dict[str, List[UserPresenceState]
-        destination_users = {}  # type: Dict[str, List[UserPresenceState]
+        destination_users = {}  # type: Dict[str, Set[UserPresenceState]
+
+        # Ignore any updates for blacklisted users
+        desired_updates = set()
+        for update in state_updates:
+            if update.state_key not in self._config.blacklisted_users:
+                desired_updates.add(update)
 
         # Send all presence updates to specific users
         for user_id in self._config.always_send_to_users:
-            destination_users[user_id] = state_updates
+            destination_users[user_id] = desired_updates
 
-        # Map state updates for configured users to members of configured rooms
-        for state in state_updates:
-            room_id = self._config.users_to_rooms.get(state.user_id)
-            if room_id:
-                # Send state update for this user to the users in the room
-                destination_rooms.setdefault(room_id, []).append(state.user_id)
-
-        return destination_rooms, destination_users
+        return destination_users
 ```
 
 ## Configuration
@@ -132,10 +126,9 @@ presence:
         # Any configuration options for your module. The below is an example.
         # of setting options for ExamplePresenceRouter.
         always_send_to_users: ["@presence_gobbler:example.org"]
-        users_to_rooms:
-          - "@alice:example.com":
-            - "!room1:example.org"
-            - "!room2:example.net"
+        blacklisted_users:
+          - "@alice:example.com"
+          - "@bob:example.com"
         ...
 ```
 
