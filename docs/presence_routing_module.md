@@ -19,7 +19,7 @@ It then implements methods related to presence routing.
 Note that one method of `ModuleApi` that may be useful is:
 
 ```python
-ModuleApi.send_local_online_presence_to(users: List[str]) -> None
+ModuleApi.send_local_online_presence_to(users: Iterable[str]) -> None
 ```
 
 which can be given a list of local or remote MXIDs to broadcast local user

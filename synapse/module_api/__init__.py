@@ -392,7 +392,7 @@ class ModuleApi:
 
         return event
 
-    async def send_local_online_presence_to(self, users: List[str]) -> None:
+    async def send_local_online_presence_to(self, users: Iterable[str]) -> None:
         """
         Send all current local user presence to a set of users. Updates to remote
         users will be sent immediately, whereas local users will receive them when
