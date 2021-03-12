@@ -31,9 +31,10 @@ It does not include state for users who are currently offline.
 Below is an example implementation of a presence router class.
 
 ```python
-from typing import Dict, Iterable, Set, Tuple
+from typing import Dict, Iterable, Set, Union
 
 from synapse.handlers.presence import UserPresenceState
+from synapse.events.presence_router import ALL
 from synapse.module_api import ModuleApi
 
 class PresenceRouterConfig:
@@ -89,7 +90,8 @@ class ExamplePresenceRouter:
         state_updates: Iterable[UserPresenceState],
     ) -> Dict[str, Set[UserPresenceState]]:
         """Given an iterable of user presence updates, determine where each one
-        needs to go.
+        needs to go. Returned results will not impede presence updates that are
+        sent between users who share a room.
 
         Args:
             state_updates: An iterable of user presence state updates.
@@ -111,7 +113,41 @@ class ExamplePresenceRouter:
             destination_users[user_id] = desired_updates
 
         return destination_users
+
+    async def get_interested_users(self, user_id: str) -> Union[Set[str], ALL]:
+        """
+        Retrieve a list of users that `user_id` is interested in receiving the
+        presence of, in addition to those it shares a room with.
+
+        Optionally, the constant synapse.events.PresenceRouter.ALL can be returned
+        to indicate that this user should receive all local and remote incoming
+        presence updates.
+
+        Note that this method will only be called for local users.
+
+        Args:
+          user_id: A user requesting presence updates.
+
+        Returns:
+          A set of user IDs to return additional presence updates for, or ALL to return
+          presence updates for all other users.
+        """
+        if user_id in self._config.always_send_to_users:
+            return ALL
+
+        return set()
 ```
+
+#### A note on `get_interested_users`
+
+`get_interested_users` is intended to filter out some presence updates early before
+they're passed to `get_users_for_states`. If `get_users_for_states` is implemented
+and `get_interested_users` is not, the default return value for
+`get_interested_users` is `ALL`. This is so that `get_users_for_states` is provided with
+all possible user presence updates, which it can then filter.
+
+If implementing `get_users_for_states`, mirroring the logic for which presence updates
+from one user should be sent to another will bring improved efficiency.
 
 ## Configuration
 
