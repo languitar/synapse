@@ -25,7 +25,17 @@ The methods that define policy are:
 import abc
 import logging
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set, Tuple, Union, FrozenSet
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    FrozenSet,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 from prometheus_client import Counter
 from typing_extensions import ContextManager
@@ -1036,6 +1046,7 @@ class PresenceEventSource:
         #   Presence -> Notifier -> PresenceEventSource -> Presence
         #
         self.presence_router = hs.get_presence_router()
+        self.module_api = hs.get_module_api()
         self.get_presence_handler = hs.get_presence_handler
         self.clock = hs.get_clock()
         self.store = hs.get_datastore()
@@ -1064,6 +1075,13 @@ class PresenceEventSource:
         # sending down the rare duplicate is not a concern.
 
         with Measure(self.clock, "presence.get_new_events"):
+            if user.to_string() in self.module_api.send_full_presence_to_local_users:
+                # This user has been specified by a module to receive all current, online
+                # user presence. Removing from_key and setting include_offline to false
+                # will do effectively this.
+                from_key = None
+                include_offline = False
+
             if from_key is not None:
                 from_key = int(from_key)
 
@@ -1088,6 +1106,8 @@ class PresenceEventSource:
 
             presence = self.get_presence_handler()
             stream_change_cache = self.store.presence_stream_cache
+
+            # TODO: Can we deduplicate some of the below?
 
             # Given the requesting user, figure out which users' presence we should query
             users_interested_in = await self._get_interested_in(user, explicit_room_id)
@@ -1126,6 +1146,15 @@ class PresenceEventSource:
                             if update.state != PresenceState.OFFLINE
                         ]
 
+                    # Remove the user from the list of users to receive all presence
+                    if (
+                        user.to_string
+                        in self.module_api.send_full_presence_to_local_users
+                    ):
+                        self.module_api.send_full_presence_to_local_users.remove(
+                            user.to_string()
+                        )
+
                     # Return presence updates for all users since the last sync
                     return presence_updates, max_token
                 else:
@@ -1142,7 +1171,9 @@ class PresenceEventSource:
 
             # The set of users that we're interested in and that have had a presence update.
             # We'll actually pull the presence updates for these users at the end.
-            interested_and_updated_users = set()  # type: Union[Set[str], FrozenSet[str]]
+            interested_and_updated_users = (
+                set()
+            )  # type: Union[Set[str], FrozenSet[str]]
 
             if from_key:
                 # First get all users that have had a presence update
@@ -1175,6 +1206,10 @@ class PresenceEventSource:
             users_to_state = await presence.current_state_for_users(
                 interested_and_updated_users
             )
+
+        # Remove the user from the list of users to receive all presence
+        if user.to_string in self.module_api.send_full_presence_to_local_users:
+            self.module_api.send_full_presence_to_local_users.remove(user.to_string())
 
         if not include_offline:
             # Filter out offline presence states
@@ -1218,7 +1253,9 @@ class PresenceEventSource:
 
         # Check with the presence router whether we should poll additional users for
         # their presence information
-        additional_users = await self.presence_router.get_interested_users(user.to_string())
+        additional_users = await self.presence_router.get_interested_users(
+            user.to_string()
+        )
         if isinstance(additional_users, PresenceRouter.ALL):
             # If the module requested that this user see the presence updates of *all*
             # users, then simply return that instead of calculating what rooms this
