@@ -43,7 +43,8 @@ class PresenceRouterConfig:
         # A list of users to always send all user presence updates to
         self.always_send_to_users = []  # type: List[str]
         
-        # A list of users to ignore presence updates for
+        # A list of users to ignore presence updates for. Does not affect
+        # shared-room presence relationships
         self.blacklisted_users = []  # type: List[str]
 
 class ExamplePresenceRouter:
@@ -154,16 +155,16 @@ Synapse, amend your homeserver config file with the following.
 
 ```yaml
 presence:
-  routing_modules:
-    - module: my_module.ExamplePresenceRouter
-      config:
-        # Any configuration options for your module. The below is an example.
-        # of setting options for ExamplePresenceRouter.
-        always_send_to_users: ["@presence_gobbler:example.org"]
-        blacklisted_users:
-          - "@alice:example.com"
-          - "@bob:example.com"
-        ...
+  routing_module:
+    module: my_module.ExamplePresenceRouter
+    config:
+      # Any configuration options for your module. The below is an example.
+      # of setting options for ExamplePresenceRouter.
+      always_send_to_users: ["@presence_gobbler:example.org"]
+      blacklisted_users:
+        - "@alice:example.com"
+        - "@bob:example.com"
+      ...
 ```
 
 The contents of `config` will be passed as a Python dictionary to the static
