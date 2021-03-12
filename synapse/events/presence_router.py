@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Dict, Iterable, Set, TypeVar, Union
+from typing import TYPE_CHECKING, Dict, Iterable, Literal, Set, Union
 
 from synapse.handlers.presence import UserPresenceState
 
@@ -27,10 +27,6 @@ class PresenceRouter:
     additional destinations. If a custom presence router is configured, calls will be
     passed to that instead.
     """
-
-    # A constant used to specify that a user should receive presence updates
-    # for all other users.
-    ALL = TypeVar("ALL")
 
     def __init__(self, hs: "HomeServer"):
         self.custom_presence_router = None
@@ -69,7 +65,9 @@ class PresenceRouter:
     # get_interested_users is used to filter out presence up front
     # then get_users_for_state is used as a second filter
 
-    async def get_interested_users(self, user_id: str) -> Union[Set[str], ALL]:
+    async def get_interested_users(
+        self, user_id: str
+    ) -> Union[Set[str], Literal["ALL"]]:
         """
         Retrieve a list of users that the provided user is interested in receiving the presence of.
         Optionally, the constant ALL can be returned to mean that this user should receive all
@@ -96,8 +94,8 @@ class PresenceRouter:
                 # functions in order to reach a local user.
                 #
                 # Given this, if get_users_for_states is defined, we just return ALL here.
-                return PresenceRouter.ALL
+                return "ALL"
 
         # A custom presence router is not defined, or doesn't implement any relevant function.
         # Don't report any additional interested users.
-        return {}
+        return set()

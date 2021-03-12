@@ -31,6 +31,7 @@ from typing import (
     FrozenSet,
     Iterable,
     List,
+    Literal,
     Optional,
     Set,
     Tuple,
@@ -1113,7 +1114,7 @@ class PresenceEventSource:
             users_interested_in = await self._get_interested_in(user, explicit_room_id)
 
             # Check whether this user should see all user updates
-            if isinstance(users_interested_in, PresenceRouter.ALL):
+            if users_interested_in == "ALL":
                 # We need to return all new presence updates to this user, regardless of whether
                 # they share a room with that user
                 if from_key:
@@ -1233,7 +1234,7 @@ class PresenceEventSource:
         user: UserID,
         explicit_room_id: Optional[str] = None,
         cache_context: Optional[_CacheContext] = None,
-    ) -> Union[Set[str], PresenceRouter.ALL]:
+    ) -> Union[Set[str], Literal["ALL"]]:
         """Returns the set of users that the given user should see presence
         updates for.
 
@@ -1256,11 +1257,11 @@ class PresenceEventSource:
         additional_users = await self.presence_router.get_interested_users(
             user.to_string()
         )
-        if isinstance(additional_users, PresenceRouter.ALL):
+        if additional_users == "ALL":
             # If the module requested that this user see the presence updates of *all*
             # users, then simply return that instead of calculating what rooms this
             # user shares
-            return PresenceRouter.ALL
+            return "ALL"
 
         # Add the additional users from the router
         users_interested_in.update(additional_users)
