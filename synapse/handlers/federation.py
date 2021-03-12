@@ -353,12 +353,9 @@ class FederationHandler(BaseHandler):
                     # Ask the remote server for the states we don't
                     # know about
                     for p in prevs - seen:
-                        logger.info(
-                            "Requesting state at missing prev_event %s",
-                            event_id,
-                        )
-
                         with nested_logging_context(p):
+                            logger.info("Requesting state at missing prev_event %s", p)
+
                             # note that if any of the missing prevs share missing state or
                             # auth events, the requests to fetch those events are deduped
                             # by the get_pdu_cache in federation_client.
@@ -3022,11 +3019,13 @@ class FederationHandler(BaseHandler):
         else:
             assert self.storage.persistence
 
+            logger.debug("Persisting %i events", len(event_and_contexts))
             # Note that this returns the events that were persisted, which may not be
             # the same as were passed in if some were deduplicated due to transaction IDs.
             events, max_stream_token = await self.storage.persistence.persist_events(
                 event_and_contexts, backfilled=backfilled
             )
+            logger.debug("Completed persistence of %i events", len(events))
 
             if self._ephemeral_messages_enabled:
                 for event in events:
