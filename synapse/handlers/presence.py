@@ -1111,7 +1111,7 @@ class PresenceEventSource:
 
                     # TODO: This feels wildly inefficient
                     # Filter through the presence router
-                    _, users_to_state = await self.presence_router.get_rooms_and_users_for_states(
+                    users_to_state = await self.presence_router.get_users_for_states(
                         users_to_state.values()
                     )
 
@@ -1426,14 +1426,9 @@ async def get_interested_parties(
 
     # Ask a presence routing module for any additional parties if one
     # is loaded.
-    (
-        router_room_ids_to_states,
-        router_users_to_states,
-    ) = await presence_router.get_rooms_and_users_for_states(states)
+    router_users_to_states = await presence_router.get_users_for_states(states)
 
     # Update the dictionaries with additional destinations and state to send
-    for room_id, user_states in router_room_ids_to_states.items():
-        room_ids_to_states.setdefault(room_id, []).extend(user_states)
     for user_id, user_states in router_users_to_states.items():
         users_to_states.setdefault(user_id, []).extend(user_states)
 

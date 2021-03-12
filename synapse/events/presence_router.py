@@ -42,10 +42,10 @@ class PresenceRouter:
                 config=hs.config.presence_router_config, module_api=hs.get_module_api()
             )
 
-    async def get_rooms_and_users_for_states(
+    async def get_users_for_states(
         self,
         state_updates: Iterable[UserPresenceState],
-    ) -> Tuple[Dict[str, List[UserPresenceState]], Dict[str, List[UserPresenceState]]]:
+    ) -> Dict[str, Set[UserPresenceState]]:
         """
         Given an iterable of user presence updates, determine where each one
         needs to go.
@@ -54,23 +54,21 @@ class PresenceRouter:
             state_updates: An iterable of user presence state updates.
 
         Returns:
-          A 2-tuple of (room_ids_to_states, users_to_states),
-          with each item being a dict of entity_name -> [UserPresenceState].
+          A dictionary of user_id -> set of UserPresenceState that the user should
+          receive.
         """
         if self.custom_presence_router is not None:
             # Ask the custom module
-            return self.custom_presence_router.get_rooms_and_users_for_states(
+            return self.custom_presence_router.get_users_for_states(
                 state_updates=state_updates
             )
 
         # Don't include any extra destinations for presence updates
-        return {}, {}
+        return {}
 
     # get_interested_users is used to filter out presence up front
     # then get_users_for_state is used as a second filter
 
-    # TODO: Should we also call this to do early filtering of incoming presence updates,
-    # so the logic matches that of /sync?
     async def get_interested_users(self, user_id: str) -> Union[Set[str], ALL]:
         """
         Retrieve a list of users that the provided user is interested in receiving the presence of.
