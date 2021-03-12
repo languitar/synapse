@@ -25,7 +25,7 @@ The methods that define policy are:
 import abc
 import logging
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Dict, Iterable, List, Set, Tuple
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set, Tuple, Union, FrozenSet
 
 from prometheus_client import Counter
 from typing_extensions import ContextManager
@@ -43,7 +43,7 @@ from synapse.state import StateHandler
 from synapse.storage.databases.main import DataStore
 from synapse.types import Collection, JsonDict, UserID, get_domain_from_id
 from synapse.util.async_helpers import Linearizer
-from synapse.util.caches.descriptors import cached
+from synapse.util.caches.descriptors import _CacheContext, cached
 from synapse.util.metrics import Measure
 from synapse.util.wheel_timer import WheelTimer
 
@@ -1035,6 +1035,7 @@ class PresenceEventSource:
         #
         #   Presence -> Notifier -> PresenceEventSource -> Presence
         #
+        self.presence_router = hs.get_presence_router()
         self.get_presence_handler = hs.get_presence_handler
         self.clock = hs.get_clock()
         self.store = hs.get_datastore()
@@ -1088,59 +1089,150 @@ class PresenceEventSource:
             presence = self.get_presence_handler()
             stream_change_cache = self.store.presence_stream_cache
 
+            # Given the requesting user, figure out which users' presence we should query
             users_interested_in = await self._get_interested_in(user, explicit_room_id)
 
-            user_ids_changed = set()  # type: Collection[str]
-            changed = None
-            if from_key:
-                changed = stream_change_cache.get_all_entities_changed(from_key)
-
-            if changed is not None and len(changed) < 500:
-                assert isinstance(user_ids_changed, set)
-
-                # For small deltas, its quicker to get all changes and then
-                # work out if we share a room or they're in our presence list
-                get_updates_counter.labels("stream").inc()
-                for other_user_id in changed:
-                    if other_user_id in users_interested_in:
-                        user_ids_changed.add(other_user_id)
-            else:
-                # Too many possible updates. Find all users we can see and check
-                # if any of them have changed.
-                get_updates_counter.labels("full").inc()
-
+            # Check whether this user should see all user updates
+            if isinstance(users_interested_in, PresenceRouter.ALL):
+                # We need to return all new presence updates to this user, regardless of whether
+                # they share a room with that user
                 if from_key:
-                    user_ids_changed = stream_change_cache.get_entities_changed(
-                        users_interested_in, from_key
+                    # Only return updates since the last sync
+                    updated_users = stream_change_cache.get_all_entities_changed(
+                        from_key
                     )
+                    if not updated_users:
+                        updated_users = []
+
+                    # Get the actual presence update for each change
+                    users_to_state = await presence.current_state_for_users(
+                        updated_users
+                    )
+
+                    # TODO: This feels wildly inefficient
+                    # Filter through the presence router
+                    _, users_to_state = await self.presence_router.get_rooms_and_users_for_states(
+                        users_to_state.values()
+                    )
+
+                    # We only want the mapping for the syncing user
+                    presence_updates = users_to_state[user.to_string()]
+
+                    if not include_offline:
+                        # Filter out offline states
+                        presence_updates = [
+                            update
+                            for update in presence_updates
+                            if update.state != PresenceState.OFFLINE
+                        ]
+
+                    # Return presence updates for all users since the last sync
+                    return presence_updates, max_token
                 else:
-                    user_ids_changed = users_interested_in
+                    # This user should receive all user presence, and hasn't provided a from_key.
+                    # Send all currently known user presence states.
+                    users_to_state = await self.store.get_presence_for_all_users(
+                        include_offline=include_offline
+                    )
 
-            updates = await presence.current_state_for_users(user_ids_changed)
+                    return list(users_to_state.values()), max_token
 
-        if include_offline:
-            return (list(updates.values()), max_token)
-        else:
+            # We have a set of users that we're interested in the presence of. We want to
+            # cross-reference that with the users that have actually changed their presence.
+
+            # The set of users that we're interested in and that have had a presence update.
+            # We'll actually pull the presence updates for these users at the end.
+            interested_and_updated_users = set()  # type: Union[Set[str], FrozenSet[str]]
+
+            if from_key:
+                # First get all users that have had a presence update
+                updated_users = stream_change_cache.get_all_entities_changed(from_key)
+
+                # Cross-reference users we're interested in with those that have had updates.
+                # Use a slightly-optimised method for processing smaller sets of updates.
+                if updated_users is not None and len(updated_users) < 500:
+                    # For small deltas, it's quicker to get all changes and then
+                    # cross-reference with the users we're interested in
+                    get_updates_counter.labels("stream").inc()
+                    for other_user_id in updated_users:
+                        if other_user_id in users_interested_in:
+                            interested_and_updated_users.add(other_user_id)
+                else:
+                    # Too many possible updates. Find all users we can see and check
+                    # if any of them have changed.
+                    get_updates_counter.labels("full").inc()
+
+                    interested_and_updated_users = (
+                        stream_change_cache.get_entities_changed(
+                            users_interested_in, from_key
+                        )
+                    )
+            else:
+                # No from_key has been specified. Return the presence for all users
+                # this user is interested in
+                interested_and_updated_users = users_interested_in
+
+            users_to_state = await presence.current_state_for_users(
+                interested_and_updated_users
+            )
+
+        if not include_offline:
+            # Filter out offline presence states
             return (
-                [s for s in updates.values() if s.state != PresenceState.OFFLINE],
+                [
+                    s
+                    for s in users_to_state.values()
+                    if s.state != PresenceState.OFFLINE
+                ],
                 max_token,
             )
+
+        return list(users_to_state.values()), max_token
 
     def get_current_key(self):
         return self.store.get_current_presence_token()
 
     @cached(num_args=2, cache_context=True)
-    async def _get_interested_in(self, user, explicit_room_id, cache_context):
+    async def _get_interested_in(
+        self,
+        user: UserID,
+        explicit_room_id: Optional[str] = None,
+        cache_context: Optional[_CacheContext] = None,
+    ) -> Union[Set[str], PresenceRouter.ALL]:
         """Returns the set of users that the given user should see presence
-        updates for
+        updates for.
+
+        Args:
+            user: The user to retrieve presence updates for.
+            explicit_room_id: A
         """
         user_id = user.to_string()
         users_interested_in = set()
         users_interested_in.add(user_id)  # So that we receive our own presence
 
+        # cache_context isn't likely to ever be None due to the @cached decorator,
+        # but we can't have a non-optional argument after the optional argument
+        # explicit_room_id either. Assert cache_context is not None so we can use it
+        # without mypy complaining.
+        assert cache_context
+
+        # Check with the presence router whether we should poll additional users for
+        # their presence information
+        additional_users = await self.presence_router.get_interested_users(user.to_string())
+        if isinstance(additional_users, PresenceRouter.ALL):
+            # If the module requested that this user see the presence updates of *all*
+            # users, then simply return that instead of calculating what rooms this
+            # user shares
+            return PresenceRouter.ALL
+
+        # Add the additional users from the router
+        users_interested_in.update(additional_users)
+
+        # Find the users who share a room with this user
         users_who_share_room = await self.store.get_users_who_share_room_with_user(
             user_id, on_invalidate=cache_context.invalidate
         )
+
         users_interested_in.update(users_who_share_room)
 
         if explicit_room_id:
@@ -1343,7 +1435,7 @@ async def get_interested_parties(
     for room_id, user_states in router_room_ids_to_states.items():
         room_ids_to_states.setdefault(room_id, []).extend(user_states)
     for user_id, user_states in router_users_to_states.items():
-        room_ids_to_states.setdefault(user_id, []).extend(user_states)
+        users_to_states.setdefault(user_id, []).extend(user_states)
 
     return room_ids_to_states, users_to_states
 

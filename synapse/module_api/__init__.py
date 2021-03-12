@@ -14,11 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Generator, Iterable, List, Optional, Tuple
 
 from twisted.internet import defer
 
 from synapse.events import EventBase
+from synapse.federation.sender import FederationSender
 from synapse.http.client import SimpleHttpClient
 from synapse.http.site import SynapseRequest
 from synapse.logging.context import make_deferred_yieldable, run_in_background
@@ -50,6 +51,7 @@ class ModuleApi:
         self._auth = hs.get_auth()
         self._auth_handler = auth_handler
         self._server_name = hs.hostname
+        self._presence_stream = hs.get_event_sources().sources["presence"]
 
         # We expose these as properties below in order to attach a helpful docstring.
         self._http_client = hs.get_simple_http_client()  # type: SimpleHttpClient
@@ -384,6 +386,21 @@ class ModuleApi:
         )
 
         return event
+
+    async def send_local_online_presence_to(self, users: List[str]) -> None:
+        for user in users:
+            if self._hs.is_mine(user):
+                # Modify SyncHandler._generate_sync_entry_for_presence to call
+                # presence_source.get_new_events with an empty `from_key` if
+                # that user's ID were in a list modified by ModuleApi somewhere.
+                # That user would then get all presence state on next incremental sync.
+                pass
+            else:
+                # Retrieve presence state for all currently online users
+                presence_events = await self._presence_stream.get_new_events(
+                    user, from_key=None, include_offline=False
+                )
+                FederationSender.send_presence([ev.state for ev in presence_events])
 
 
 class PublicRoomListManager:
