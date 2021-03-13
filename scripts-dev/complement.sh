@@ -8,7 +8,7 @@
 cd "$(dirname $0)/.."
 
 # Build the base Synapse image from the local checkout
-docker build -t matrixdotorg/synapse:latest -f docker/Dockerfile .
+DOCKER_BUILDKIT=1 docker build -t matrixdotorg/synapse:latest -f docker/Dockerfile .
 
 # Download Complement
 wget -N https://github.com/matrix-org/complement/archive/master.tar.gz

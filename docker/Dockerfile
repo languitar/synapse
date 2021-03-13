@@ -1,3 +1,5 @@
+# syntax = docker/dockerfile:experimental
+
 # Dockerfile to build the matrixdotorg/synapse docker images.
 #
 # To build the image, run `docker build` command from the root of the
@@ -30,31 +32,31 @@ RUN apt-get update && apt-get install -y \
     libxslt1-dev \
     rustc \
     zlib1g-dev \
- && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # Build dependencies that are not available as wheels, to speed up rebuilds
 RUN pip install --prefix="/install" --no-warn-script-location \
-        cryptography \
-        frozendict \
-        jaeger-client \
-        opentracing \
-        # Match the version constraints of Synapse
-        "prometheus_client>=0.4.0" \
-        psycopg2 \
-        pycparser \
-        pyrsistent \
-        pyyaml \
-        simplejson \
-        threadloop \
-        thrift
+    cryptography \
+    frozendict \
+    jaeger-client \
+    opentracing \
+    # Match the version constraints of Synapse
+    "prometheus_client>=0.4.0" \
+    psycopg2 \
+    pycparser \
+    pyrsistent \
+    pyyaml \
+    simplejson \
+    threadloop \
+    thrift
 
 # now install synapse and all of the python deps to /install.
 COPY synapse /synapse/synapse/
 COPY scripts /synapse/scripts/
 COPY MANIFEST.in README.rst setup.py synctl /synapse/
 
-RUN pip install --prefix="/install" --no-warn-script-location \
-        /synapse[all]
+RUN --mount=type=cache,mode=0755,target=/root/.cache/pip pip install --prefix="/install" --no-warn-script-location \
+    /synapse[all]
 
 ###
 ### Stage 1: runtime
@@ -69,7 +71,7 @@ RUN apt-get update && apt-get install -y \
     libpq5 \
     libwebp6 \
     xmlsec1 \
- && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local
 COPY ./docker/start.py /start.py
@@ -82,4 +84,4 @@ EXPOSE 8008/tcp 8009/tcp 8448/tcp
 ENTRYPOINT ["/start.py"]
 
 HEALTHCHECK --interval=1m --timeout=5s \
-  CMD curl -fSs http://localhost:8008/health || exit 1
+    CMD curl -fSs http://localhost:8008/health || exit 1
